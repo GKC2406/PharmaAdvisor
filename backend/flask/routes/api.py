@@ -1,34 +1,63 @@
 import pandas as pd
 from flask import Blueprint, request, jsonify
-from models.alternatives_model import get_alternatives
+from alternatives_model import build_comparison_dataset, train_and_evaluate_model
 # from models.chatbot_model import symptoms_dict, predict_disease, get_description, get_precautions, get_symptom
 from models.medibot_model import predict_disease_and_precaution
 from models.side_effects_model import train_model, predict_side_effects
 from models.interaction_model import check_drug_interaction
-
+import os 
 api = Blueprint('api', __name__)
 
 def create_error_response(message, status_code):
     return jsonify({'error': message}), status_code
+@api.route('/build-comparison-dataset', methods=['POST'])
+def build_dataset():
+    input_csv = "data/latest_dataset.csv"
+    output_csv = "data/dosage_aware_comparisons.csv"
+
+    if not os.path.exists(input_csv):
+        return create_error_response("Input dataset not found!", 400)
+
+    num_rows = build_comparison_dataset(input_csv, output_csv)
+    return jsonify({"message": f"Comparison dataset built successfully with {num_rows} rows."})
+
+
+@api.route('/train-and-predict', methods=['POST'])
+def train_and_predict():
+    comparison_csv = "data/dosage_aware_comparisons.csv"
+
+    if not os.path.exists(comparison_csv):
+        return create_error_response("Comparison dataset not found!", 400)
+
+    metrics, error = train_and_evaluate_model(comparison_csv)
+
+    if error:
+        return create_error_response(error, 400)
+
+    return jsonify({"message": "Model trained and evaluated!", "metrics": metrics})
+
 
 @api.route('/get-alternatives', methods=['POST'])
 def get_alternatives_route():
     data = request.get_json()
-    medicine = data.get('medicine_name', '').strip()  
+    medicine = data.get('medicine_name', '').strip()
     side_effect = data.get('side_effect', '').strip()
 
     if not medicine:
-        return create_error_response('Medicine name is required.', 400)
-    
+        return create_error_response("Medicine name is required.", 400)
+
     if not side_effect:
-        return create_error_response('Side effect is required.', 400)
+        return create_error_response("Side effect is required.", 400)
 
     alternatives = get_alternatives(medicine, side_effect)
 
     if alternatives:
-        return jsonify({'alternatives': alternatives})
+        return jsonify({"alternatives": alternatives})
     else:
-        return create_error_response('No alternatives found.', 404)
+        return create_error_response("No alternatives found.", 404)
+
+
+
 
 
 @api.route('/predict', methods=['POST'])
